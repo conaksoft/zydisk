@@ -13,7 +13,8 @@ class AppDelegate: FlutterAppDelegate {
         channel.setMethodCallHandler { [weak self] (call, result) in
             switch call.method {
             case "installDaemon":
-                self?.installDaemon(result: result)
+                let force = (call.arguments as? [String: Any])?["force"] as? Bool ?? false
+                self?.installDaemon(force: force, result: result)
             case "mount":
                 if let args = call.arguments as? [String: Any],
                    let port = args["port"] as? Int,
@@ -35,22 +36,9 @@ class AppDelegate: FlutterAppDelegate {
         }
     }
     
-    private func installDaemon(result: @escaping FlutterResult) {
-        if #available(macOS 13.0, *) {
-            let service = SMAppService.daemon(plistName: "com.conaksoft.zydisk.daemon.plist")
-            do {
-                if service.status == SMAppService.Status.enabled {
-                    result(true)
-                    return
-                }
-                try service.register()
-                result(true)
-            } catch {
-                result(FlutterError(code: "DAEMON_ERROR", message: "Failed to install daemon: \(error.localizedDescription)", details: nil))
-            }
-        } else {
-            result(FlutterError(code: "UNSUPPORTED_OS", message: "SMAppService requires macOS 13.0 or newer", details: nil))
-        }
+    private func installDaemon(force: Bool, result: @escaping FlutterResult) {
+        // Daemon is now managed via launchctl directly to avoid Xcode framework injection crashes
+        result(true)
     }
     
     private func setupDaemonConnection() -> Bool {
