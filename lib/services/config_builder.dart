@@ -54,6 +54,7 @@ class ConfigBuilder {
         buffer.writeln('host = ${config.host}');
         buffer.writeln('user = ${config.user}');
         buffer.writeln('port = ${config.port}');
+        buffer.writeln('concurrency = 3');
         if (password != null) {
           final obscured = await _obscurePassword(password);
           buffer.writeln('pass = $obscured');
@@ -66,6 +67,7 @@ class ConfigBuilder {
         buffer.writeln('user = ${config.user}');
         buffer.writeln('port = ${config.port}');
         buffer.writeln('tls = true');
+        buffer.writeln('concurrency = 3');
         if (password != null) {
           final obscured = await _obscurePassword(password);
           buffer.writeln('pass = $obscured');

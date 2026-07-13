@@ -310,7 +310,7 @@ class _StatusBarState extends State<_StatusBar> {
                 cursor: SystemMouseCursors.click,
                 child: GestureDetector(
                   onTap: () => launchUrl(
-                    Uri.parse('https://github.com/conaksoft/zydisk/releases'),
+                    Uri.parse('https://github.com/shibware/zydisk/releases'),
                   ),
                   child: Text(
                     '$_version (Check Updates)',

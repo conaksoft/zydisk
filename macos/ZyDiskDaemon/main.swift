@@ -27,7 +27,7 @@ class DaemonDelegate: NSObject, NSXPCListenerDelegate {
     }
     
     func unmount(mountPoint: String, withReply reply: @escaping (Bool, String?) -> Void) {
-        let combinedCmd = "umount \"\(mountPoint)\" || umount -f \"\(mountPoint)\" ; sleep 0.5 ; rmdir \"\(mountPoint)\" 2>/dev/null || true"
+        let combinedCmd = "diskutil unmount \"\(mountPoint)\" || diskutil unmount force \"\(mountPoint)\" ; sleep 1 ; rmdir \"\(mountPoint)\" 2>/dev/null || true"
         let result = runCommand(cmd: combinedCmd)
         reply(result.0, result.1)
     }
@@ -35,17 +35,14 @@ class DaemonDelegate: NSObject, NSXPCListenerDelegate {
     private func runCommand(cmd: String) -> (Bool, String?) {
         let task = Process()
         task.launchPath = "/bin/sh"
-        task.arguments = ["-c", cmd]
-        
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = pipe
+        let tmpFile = "/tmp/zydisk_daemon_cmd_\(UUID().uuidString).log"
+        task.arguments = ["-c", "\(cmd) > \(tmpFile) 2>&1"]
         
         do {
             try task.run()
             task.waitUntilExit()
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            let output = String(data: data, encoding: .utf8)
+            let output = try? String(contentsOfFile: tmpFile, encoding: .utf8)
+            try? FileManager.default.removeItem(atPath: tmpFile)
             return (task.terminationStatus == 0, output)
         } catch {
             return (false, error.localizedDescription)

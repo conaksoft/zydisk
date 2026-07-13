@@ -7,6 +7,7 @@ import '../services/session_manager.dart';
 import '../services/mounter.dart';
 import '../theme/app_theme.dart';
 import 'add_remote_window.dart';
+import 'package:file_selector/file_selector.dart';
 
 class MountsListWindow extends StatefulWidget {
   const MountsListWindow({super.key});
@@ -91,6 +92,26 @@ class _MountsListWindowState extends State<MountsListWindow> {
               ],
             ),
           ),
+          // Import button
+          Tooltip(
+            message: 'Import Remotes',
+            child: IconButton(
+              icon: const Icon(Icons.file_download_outlined, size: 18),
+              color: AppTheme.textPrimary,
+              onPressed: () => _importRemotes(context),
+            ),
+          ),
+          const SizedBox(width: 4),
+          // Export button
+          Tooltip(
+            message: 'Export Remotes',
+            child: IconButton(
+              icon: const Icon(Icons.file_upload_outlined, size: 18),
+              color: AppTheme.textPrimary,
+              onPressed: () => _exportRemotes(context),
+            ),
+          ),
+          const SizedBox(width: 10),
           // Add Remote button
           Tooltip(
             message: 'Add Remote (⌘N)',
@@ -207,6 +228,32 @@ class _MountsListWindowState extends State<MountsListWindow> {
         },
       ),
     );
+  }
+
+  Future<void> _importRemotes(BuildContext context) async {
+    const typeGroup = XTypeGroup(
+      label: 'JSONs',
+      extensions: <String>['json'],
+    );
+    final file = await openFile(acceptedTypeGroups: <XTypeGroup>[typeGroup]);
+    if (file != null && context.mounted) {
+      final session = context.read<SessionManager>();
+      await session.importFromFile(file.path);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Remotes imported successfully')),
+      );
+    }
+  }
+
+  Future<void> _exportRemotes(BuildContext context) async {
+    final location = await getSaveLocation(suggestedName: 'remotes.json');
+    if (location != null && context.mounted) {
+      final session = context.read<SessionManager>();
+      await session.exportToFile(location.path);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Remotes exported to ${location.path}')),
+      );
+    }
   }
 }
 
@@ -473,7 +520,10 @@ class _RemoteCardState extends State<_RemoteCard>
                   ),
                 )
               : ElevatedButton(
-                  onPressed: () => session.toggleMount(config),
+                  onPressed: () => session.toggleMount(
+                    config,
+                    onPasswordRequested: () => _promptForPassword(context, config),
+                  ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: config.isMounted
                         ? AppTheme.danger.withOpacity(0.15)
@@ -609,7 +659,7 @@ class _RemoteCardState extends State<_RemoteCard>
   ) {
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogCtx) => AlertDialog(
         backgroundColor: AppTheme.surfaceElevated,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         title: Text(
@@ -626,7 +676,7 @@ class _RemoteCardState extends State<_RemoteCard>
         ),
         actions: [
           OutlinedButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogCtx),
             child: const Text('Cancel'),
           ),
           ElevatedButton(
@@ -635,8 +685,8 @@ class _RemoteCardState extends State<_RemoteCard>
               foregroundColor: Colors.white,
             ),
             onPressed: () {
+              Navigator.pop(dialogCtx);
               session.deleteRemote(config);
-              Navigator.pop(context);
             },
             child: const Text('Delete'),
           ),
@@ -648,5 +698,74 @@ class _RemoteCardState extends State<_RemoteCard>
   Future<void> _openTerminal(RemoteConfig config) async {
     final mountPoint = '/Volumes/${config.name}';
     await Process.run('open', ['-a', 'Terminal', mountPoint]);
+  }
+
+  Future<String?> _promptForPassword(BuildContext context, RemoteConfig config) async {
+    final tc = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.surfaceElevated,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        title: Text(
+          'Password Required',
+          style: GoogleFonts.inter(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: AppTheme.textPrimary,
+          ),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Please enter the password for "${config.name}".',
+              style: GoogleFonts.inter(fontSize: 13, color: AppTheme.textSecondary),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: tc,
+              obscureText: true,
+              autofocus: true,
+              style: GoogleFonts.inter(fontSize: 14, color: AppTheme.textPrimary),
+              decoration: InputDecoration(
+                hintText: 'Password',
+                hintStyle: const TextStyle(color: AppTheme.textMuted),
+                filled: true,
+                fillColor: AppTheme.surface,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: AppTheme.border),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: AppTheme.border),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: AppTheme.accent),
+                ),
+              ),
+              onSubmitted: (val) => Navigator.pop(ctx, val),
+            ),
+          ],
+        ),
+        actions: [
+          OutlinedButton(
+            onPressed: () => Navigator.pop(ctx, null),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.accent,
+              foregroundColor: Colors.black,
+            ),
+            onPressed: () => Navigator.pop(ctx, tc.text),
+            child: const Text('Save & Mount'),
+          ),
+        ],
+      ),
+    );
   }
 }
