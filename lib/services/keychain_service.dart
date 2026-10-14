@@ -7,16 +7,23 @@ class KeychainService {
   static const _service = 'com.zydisk.app';
 
   static Future<void> savePassword(String remoteId, String password) async {
-    // Önce varsa sil
-    await _deleteEntry(remoteId);
-    // Yeni ekle
-    await Process.run('security', [
-      'add-generic-password',
-      '-s', _service,
-      '-a', remoteId,
-      '-w', password,
-      '-U', // update if exists
-    ]);
+    // Parola komut satırı argümanı olarak verilirse `ps` ile görülebilir; bu yüzden
+    // `security -i` etkileşimli kipine stdin üzerinden gönderilir.
+    final p = await Process.start('security', ['-i']);
+    p.stdin.writeln(
+      'add-generic-password -U -s ${_quote(_service)} -a ${_quote(remoteId)} -w ${_quote(password)}',
+    );
+    await p.stdin.close();
+    await p.stdout.drain<void>();
+    await p.stderr.drain<void>();
+    final code = await p.exitCode;
+    if (code != 0) {
+      throw Exception('Parola anahtar zincirine kaydedilemedi ($code)');
+    }
+  }
+
+  static String _quote(String value) {
+    return '"${value.replaceAll(r'\', r'\\').replaceAll('"', r'\"')}"';
   }
 
   static Future<String?> getPassword(String remoteId) async {

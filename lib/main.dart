@@ -1,42 +1,59 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'models/remote_config.dart';
+import 'services/app_settings.dart';
+import 'services/daemon_client.dart';
 import 'services/session_manager.dart';
 import 'theme/app_theme.dart';
 import 'ui/mounts_list_window.dart';
 import 'ui/tray_menu.dart';
 import 'ui/setup_screen.dart';
+import 'ui/widgets.dart';
+
+/// İçerik alanının (başlık/durum çubuğu arasındaki) navigator'ı; menü çubuğundan ekran açmak için.
+final contentNavigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Window setup
   await windowManager.ensureInitialized();
   const options = WindowOptions(
-    size: Size(720, 700),
-    minimumSize: Size(620, 550),
+    size: Size(760, 680),
+    minimumSize: Size(620, 520),
     center: true,
     title: 'ZyDisk',
     titleBarStyle: TitleBarStyle.hidden,
-    windowButtonVisibility: false,
-    backgroundColor: Color(0xFF0D1117),
+    windowButtonVisibility: true,
+    backgroundColor: AppTheme.bg,
     skipTaskbar: false,
   );
   await windowManager.waitUntilReadyToShow(options, () async {
+    await windowManager.setPreventClose(true);
     await windowManager.show();
     await windowManager.focus();
-    await windowManager.setResizable(true);
   });
 
   runApp(
-    ChangeNotifierProvider(
-      create: (_) => SessionManager(),
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => SessionManager()),
+        ChangeNotifierProvider(create: (_) => AppSettings()),
+      ],
       child: const ZyDiskApp(),
     ),
   );
+}
+
+Future<String?> promptPasswordFromAnywhere(RemoteConfig config, {String? reason}) async {
+  final ctx = contentNavigatorKey.currentContext;
+  if (ctx == null) return null;
+  await windowManager.show();
+  await windowManager.focus();
+  if (!ctx.mounted) return null;
+  return promptForPassword(ctx, config, reason: reason);
 }
 
 class ZyDiskApp extends StatefulWidget {
@@ -49,24 +66,59 @@ class ZyDiskApp extends StatefulWidget {
 class _ZyDiskAppState extends State<ZyDiskApp> with WindowListener {
   TrayMenuManager? _trayMenu;
   bool _isSetupComplete = false;
+  bool _quitting = false;
 
   @override
   void initState() {
     super.initState();
     windowManager.addListener(this);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _init());
+    DaemonClient.channel.setMethodCallHandler((call) async {
+      if (call.method == 'quitRequested') await _quit();
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _initTray());
   }
 
-  Future<void> _init() async {
+  Future<void> _initTray() async {
     final session = context.read<SessionManager>();
-    await session.load();
-
-    // Init tray
-    _trayMenu = TrayMenuManager(context);
+    _trayMenu = TrayMenuManager(
+      session: session,
+      onOpenWindow: _showWindow,
+      onAddRemote: () async {
+        await _showWindow();
+        final ctx = contentNavigatorKey.currentContext;
+        if (ctx != null && ctx.mounted) openAddRemote(ctx);
+      },
+      onQuit: _quit,
+      onPasswordRequested: promptPasswordFromAnywhere,
+    );
     await _trayMenu!.init();
-
-    // Refresh tray when session changes
     session.addListener(() => _trayMenu?.refresh());
+  }
+
+  Future<void> _onSetupComplete() async {
+    setState(() => _isSetupComplete = true);
+    final settings = context.read<AppSettings>();
+    final session = context.read<SessionManager>();
+    await settings.load();
+    session.cleanAppleDouble = settings.cleanAppleDouble;
+    await session.load(onPasswordRequested: promptPasswordFromAnywhere);
+  }
+
+  Future<void> _showWindow() async {
+    await windowManager.show();
+    await windowManager.focus();
+  }
+
+  Future<void> _quit() async {
+    if (_quitting) return;
+    _quitting = true;
+    final settings = context.read<AppSettings>();
+    final session = context.read<SessionManager>();
+    if (settings.unmountOnQuit && session.mountedCount > 0) {
+      setState(() {});
+      await session.disposeAll();
+    }
+    await DaemonClient.channel.invokeMethod('quitNow');
   }
 
   @override
@@ -78,7 +130,7 @@ class _ZyDiskAppState extends State<ZyDiskApp> with WindowListener {
 
   @override
   void onWindowClose() async {
-    // Hide to tray instead of quit
+    // Kapat düğmesi uygulamayı sonlandırmaz; menü çubuğunda çalışmaya devam eder.
     await windowManager.hide();
   }
 
@@ -88,15 +140,48 @@ class _ZyDiskAppState extends State<ZyDiskApp> with WindowListener {
       title: 'ZyDisk',
       theme: AppTheme.darkTheme,
       debugShowCheckedModeBanner: false,
-      home: _isSetupComplete
-          ? const _MainWindow()
-          : SetupScreen(
-              onComplete: () {
-                setState(() {
-                  _isSetupComplete = true;
-                });
-              },
+      home: Stack(
+        children: [
+          _isSetupComplete ? const _MainWindow() : SetupScreen(onComplete: _onSetupComplete),
+          if (_quitting) const _QuitOverlay(),
+        ],
+      ),
+    );
+  }
+}
+
+class _QuitOverlay extends StatelessWidget {
+  const _QuitOverlay();
+
+  @override
+  Widget build(BuildContext context) {
+    final pending = context.watch<SessionManager>().pendingUploadsTotal;
+    return Positioned.fill(
+      child: ColoredBox(
+        color: Colors.black.withValues(alpha: 0.6),
+        child: Center(
+          child: Material(
+            color: AppTheme.surfaceElevated,
+            borderRadius: BorderRadius.circular(14),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 22),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2)),
+                  const SizedBox(height: 14),
+                  Text('Sürücüler güvenle ayrılıyor…', style: AppTheme.text(14, weight: FontWeight.w600)),
+                  if (pending > 0) ...[
+                    const SizedBox(height: 4),
+                    Text('$pending dosyanın yüklemesi bekleniyor',
+                        style: AppTheme.text(12, color: AppTheme.textSecondary)),
+                  ],
+                ],
+              ),
             ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -110,119 +195,33 @@ class _MainWindow extends StatelessWidget {
       backgroundColor: AppTheme.bg,
       body: Column(
         children: [
-          // Custom title bar
-          _TitleBar(),
-          // Main content
+          const _TitleBar(),
           Expanded(
             child: Navigator(
-              onGenerateRoute: (settings) {
-                return PageRouteBuilder(
-                  pageBuilder: (_, __, ___) => const MountsListWindow(),
-                  transitionsBuilder: (_, anim, __, child) =>
-                      FadeTransition(opacity: anim, child: child),
-                );
-              },
+              key: contentNavigatorKey,
+              onGenerateRoute: (settings) => PageRouteBuilder(
+                pageBuilder: (_, _, _) => const MountsListWindow(),
+              ),
             ),
           ),
-          // Status bar
-          _StatusBar(),
+          const _StatusBar(),
         ],
       ),
     );
   }
 }
 
+/// Yerel macOS trafik ışıkları için boşluk bırakan, sürüklenebilir başlık çubuğu.
 class _TitleBar extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onPanUpdate: (details) {
-        windowManager.startDragging();
-      },
-      child: Container(
-        height: 44,
-        decoration: const BoxDecoration(
-          color: AppTheme.bg,
-          border: Border(
-            bottom: BorderSide(color: AppTheme.border, width: 0.5),
-          ),
-        ),
-        child: Row(
-          children: [
-            const SizedBox(width: 16),
-            // Traffic light buttons
-            _WindowButton(
-              color: const Color(0xFFFF5F57),
-              hoverIcon: Icons.close_rounded,
-              onTap: () => windowManager.hide(),
-            ),
-            const SizedBox(width: 8),
-            _WindowButton(
-              color: const Color(0xFFFFBD2E),
-              hoverIcon: Icons.remove_rounded,
-              onTap: () => windowManager.minimize(),
-            ),
-            const SizedBox(width: 8),
-            _WindowButton(
-              color: const Color(0xFF28C840),
-              hoverIcon: Icons.fullscreen_rounded,
-              onTap: () => windowManager.maximize(),
-            ),
-            const Spacer(),
-            Text(
-              'ZyDisk',
-              style: GoogleFonts.inter(
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-                color: AppTheme.textMuted,
-              ),
-            ),
-            const Spacer(),
-            SizedBox(width: 16 + 3 * 20.0 + 16),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _WindowButton extends StatefulWidget {
-  final Color color;
-  final IconData hoverIcon;
-  final VoidCallback onTap;
-
-  const _WindowButton({
-    required this.color,
-    required this.hoverIcon,
-    required this.onTap,
-  });
-
-  @override
-  State<_WindowButton> createState() => _WindowButtonState();
-}
-
-class _WindowButtonState extends State<_WindowButton> {
-  bool _hovered = false;
+  const _TitleBar();
 
   @override
   Widget build(BuildContext context) {
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: GestureDetector(
-        onTap: widget.onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          width: 14,
-          height: 14,
-          decoration: BoxDecoration(
-            color: widget.color,
-            shape: BoxShape.circle,
-          ),
-          alignment: Alignment.center,
-          child: _hovered
-              ? Icon(widget.hoverIcon, size: 9, color: Colors.black54)
-              : null,
+    return DragToMoveArea(
+      child: SizedBox(
+        height: 38,
+        child: Center(
+          child: Text('ZyDisk', style: AppTheme.text(12, weight: FontWeight.w600, color: AppTheme.textMuted)),
         ),
       ),
     );
@@ -230,102 +229,73 @@ class _WindowButtonState extends State<_WindowButton> {
 }
 
 class _StatusBar extends StatefulWidget {
+  const _StatusBar();
+
   @override
   State<_StatusBar> createState() => _StatusBarState();
 }
 
 class _StatusBarState extends State<_StatusBar> {
-  String _version = 'v1.0.0';
+  String _version = '';
 
   @override
   void initState() {
     super.initState();
-    _loadVersion();
-  }
-
-  Future<void> _loadVersion() async {
-    try {
-      final info = await PackageInfo.fromPlatform();
-      setState(() {
-        _version = 'v${info.version}';
-      });
-    } catch (_) {}
+    PackageInfo.fromPlatform().then((info) {
+      if (mounted) setState(() => _version = 'v${info.version}');
+    }).catchError((_) {});
   }
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<SessionManager>(
-      builder: (_, session, __) {
-        final mounted = session.remotes.where((r) => r.isMounted).length;
-        final total = session.remotes.length;
+    final session = context.watch<SessionManager>();
+    final mounted = session.mountedCount;
+    final pending = session.pendingUploadsTotal;
 
-        return Container(
-          height: 28,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          decoration: const BoxDecoration(
-            color: AppTheme.surface,
-            border: Border(top: BorderSide(color: AppTheme.border, width: 0.5)),
+    return Container(
+      height: 28,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: const BoxDecoration(
+        color: AppTheme.surface,
+        border: Border(top: BorderSide(color: AppTheme.border)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 7,
+            height: 7,
+            decoration: BoxDecoration(
+              color: mounted > 0 ? AppTheme.success : AppTheme.unmounted,
+              shape: BoxShape.circle,
+            ),
           ),
-          child: Row(
-            children: [
-              Container(
-                width: 7,
-                height: 7,
-                decoration: BoxDecoration(
-                  color: mounted > 0 ? AppTheme.mounted : AppTheme.unmounted,
-                  shape: BoxShape.circle,
-                ),
-              ),
-              const SizedBox(width: 6),
-              Text(
-                mounted > 0
-                    ? '$mounted/$total mounted'
-                    : total > 0
-                    ? '$total remotes, none mounted'
-                    : 'No remotes',
-                style: GoogleFonts.inter(
-                  fontSize: 11,
-                  color: AppTheme.textMuted,
-                ),
-              ),
-              const Spacer(),
-              // Website Link
-              MouseRegion(
-                cursor: SystemMouseCursors.click,
-                child: GestureDetector(
-                  onTap: () => launchUrl(Uri.parse('https://conaksoft.com')),
-                  child: Text(
-                    'conaksoft.com',
-                    style: GoogleFonts.inter(
-                      fontSize: 11,
-                      color: AppTheme.textSecondary,
-                      decoration: TextDecoration.underline,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              // Version & Updates Link
-              MouseRegion(
-                cursor: SystemMouseCursors.click,
-                child: GestureDetector(
-                  onTap: () => launchUrl(
-                    Uri.parse('https://github.com/shibware/zydisk/releases'),
-                  ),
-                  child: Text(
-                    '$_version (Check Updates)',
-                    style: GoogleFonts.inter(
-                      fontSize: 11,
-                      color: AppTheme.textSecondary,
-                      decoration: TextDecoration.underline,
-                    ),
-                  ),
-                ),
-              ),
-            ],
+          const SizedBox(width: 7),
+          Text(
+            mounted > 0 ? '$mounted sürücü bağlı' : 'Bağlı sürücü yok',
+            style: AppTheme.text(11, color: AppTheme.textMuted),
           ),
-        );
-      },
+          if (pending > 0) ...[
+            const SizedBox(width: 12),
+            const Icon(Icons.arrow_upward_rounded, size: 11, color: AppTheme.accent),
+            const SizedBox(width: 3),
+            Text('$pending dosya yükleniyor', style: AppTheme.text(11, color: AppTheme.accent)),
+          ],
+          const Spacer(),
+          _link('conaksoft.com', 'https://conaksoft.com'),
+          const SizedBox(width: 14),
+          _link('$_version · Güncellemeler', 'https://github.com/shibware/zydisk/releases'),
+        ],
+      ),
+    );
+  }
+
+  Widget _link(String label, String url) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: () => launchUrl(Uri.parse(url)),
+        child: Text(label, style: AppTheme.text(11, color: AppTheme.textSecondary)),
+      ),
     );
   }
 }

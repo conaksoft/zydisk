@@ -17,9 +17,12 @@ Whether you are a developer managing remote servers, a creative professional acc
 
 - **Native macOS Integration:** Mounts drives using native NFS. Say goodbye to FUSE installations, kernel panics, and security policy downgrades on Apple Silicon.
 - **Multi-Protocol Support:** Connect to **SFTP/SSH**, **FTP**, **FTPS**, and **S3 Compatible** storage providers effortlessly.
-- **Zero-Password Workflow:** Features a built-in macOS Privileged Helper Tool (`SMAppService`). Once authorized, you can mount and unmount drives instantly without ever typing your Mac password again.
-- **Minimalist & Professional UI:** A distraction-free, dark-themed monochrome interface designed for power users.
-- **Secure by Default:** Credentials and private keys are managed securely, ensuring your server access remains protected.
+- **Zero-Password Workflow:** A signed-caller-only privileged helper (`ZyDiskDaemon`) is installed once. After that, mounting and ejecting never ask for your Mac password. The helper updates itself when the app is updated (Team-signed builds).
+- **Touch ID for sensitive actions:** Revealing a saved password or resetting the app is confirmed with Touch ID, falling back to your Mac password when Touch ID isn't available.
+- **No `._` clutter on your server:** macOS writes AppleDouble (`._file`) and `.DS_Store` files over NFS. ZyDisk removes them from the server as soon as they are uploaded, and can sweep existing ones with one click.
+- **Uninterrupted mounts:** rclone runs supervised with an on-disk NFS handle cache. If it crashes it is restarted on the same port and Finder keeps working. Drives survive an app restart and are adopted again, and pending uploads finish before rclone is stopped.
+- **Secure by Default:** Passwords live in the macOS Keychain and are passed to rclone only through its process environment. Nothing is written to `rclone.conf` or exposed in process arguments.
+- **Live status:** Upload queue and speed per drive, auto-mount on launch, launch at login, and connect/eject from the menu bar.
 - **Developer Ready:** One-click shortcuts to open your mounted drives directly in **VS Code**, **Terminal**, or **Finder**.
 
 ## 🛠 Tech Stack

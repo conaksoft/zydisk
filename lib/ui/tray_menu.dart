@@ -1,114 +1,120 @@
-import 'package:flutter/material.dart';
 import 'package:tray_manager/tray_manager.dart';
-import 'package:window_manager/window_manager.dart';
-import 'package:provider/provider.dart';
 import '../models/remote_config.dart';
 import '../services/session_manager.dart';
 
+/// Menü çubuğu simgesi: sürücüleri pencere açmadan bağlayıp ayırmayı sağlar.
 class TrayMenuManager with TrayListener {
-  final BuildContext rootContext;
+  final SessionManager session;
+  final Future<void> Function() onOpenWindow;
+  final Future<void> Function() onAddRemote;
+  final Future<void> Function() onQuit;
+  final PasswordPrompt onPasswordRequested;
 
-  TrayMenuManager(this.rootContext);
+  TrayMenuManager({
+    required this.session,
+    required this.onOpenWindow,
+    required this.onAddRemote,
+    required this.onQuit,
+    required this.onPasswordRequested,
+  });
+
+  String _lastSignature = '';
 
   Future<void> init() async {
     trayManager.addListener(this);
-
-    // Set macOS menu bar icon
-    await trayManager.setIcon(
-      'assets/icons/tray_icon.png',
-      isTemplate: true, // Auto-adapts to dark/light mode
-    );
+    await trayManager.setIcon('assets/icons/tray_icon.png', isTemplate: true);
     await trayManager.setToolTip('ZyDisk');
-    await _rebuildMenu();
+    await _rebuildMenu(force: true);
   }
 
-  Future<void> _rebuildMenu() async {
-    final session = rootContext.read<SessionManager>();
+  Future<void> _rebuildMenu({bool force = false}) async {
     final remotes = session.remotes;
+    // Yalnızca menüde görünen bilgiler değiştiyse yeniden kur (istatistik güncellemeleri sık gelir).
+    final signature = [
+      for (final r in remotes) '${r.id}:${r.name}:${r.isMounted}:${session.isLoading(r.id)}',
+      'p${session.pendingUploadsTotal > 0}',
+    ].join('|');
+    if (!force && signature == _lastSignature) return;
+    _lastSignature = signature;
 
     final items = <MenuItem>[];
+    final mounted = remotes.where((r) => r.isMounted).length;
 
-    // App title
     items.add(MenuItem(
       key: 'title',
-      label: 'ZyDisk',
+      label: mounted > 0 ? 'ZyDisk — $mounted sürücü bağlı' : 'ZyDisk',
       disabled: true,
     ));
+    if (session.pendingUploadsTotal > 0) {
+      items.add(MenuItem(key: 'uploads', label: '↑ ${session.pendingUploadsTotal} dosya yükleniyor', disabled: true));
+    }
     items.add(MenuItem.separator());
 
-    // Remotes
     if (remotes.isEmpty) {
-      items.add(MenuItem(
-        key: 'no_remotes',
-        label: '  No remotes configured',
-        disabled: true,
-      ));
+      items.add(MenuItem(key: 'no_remotes', label: 'Henüz bağlantı yok', disabled: true));
     } else {
       for (final r in remotes) {
-        final status = r.isMounted ? '● ' : '○ ';
-        items.add(MenuItem(
+        final loading = session.isLoading(r.id);
+        items.add(MenuItem.checkbox(
           key: 'remote_${r.id}',
-          label: '$status${r.name}  (${r.type.label})',
+          label: loading ? '${r.name}  (${session.busyLabel(r.id)})' : '${r.name}  ·  ${r.type.label}',
+          checked: r.isMounted,
+          disabled: loading,
         ));
+      }
+      if (mounted > 0) {
+        items.add(MenuItem.separator());
+        items.add(MenuItem(key: 'unmount_all', label: 'Tümünü Ayır'));
       }
     }
 
     items.add(MenuItem.separator());
-    items.add(MenuItem(
-      key: 'open_window',
-      label: 'Open ZyDisk...',
-    ));
-    items.add(MenuItem(key: 'add_remote', label: 'Add Remote...'));
+    items.add(MenuItem(key: 'open_window', label: 'ZyDisk\'i Aç'));
+    items.add(MenuItem(key: 'add_remote', label: 'Yeni Bağlantı…'));
     items.add(MenuItem.separator());
-    items.add(MenuItem(key: 'quit', label: 'Quit'));
+    items.add(MenuItem(key: 'quit', label: 'ZyDisk\'ten Çık'));
 
-    final menu = Menu(items: items);
-    await trayManager.setContextMenu(menu);
+    await trayManager.setContextMenu(Menu(items: items));
   }
 
   @override
-  void onTrayIconMouseDown() {
-    _showWindow();
-  }
+  void onTrayIconMouseDown() => trayManager.popUpContextMenu();
 
   @override
-  void onTrayIconRightMouseDown() {
-    trayManager.popUpContextMenu();
-  }
+  void onTrayIconRightMouseDown() => trayManager.popUpContextMenu();
 
   @override
   void onTrayMenuItemClick(MenuItem menuItem) {
-    switch (menuItem.key) {
+    final key = menuItem.key ?? '';
+    switch (key) {
       case 'open_window':
-        _showWindow();
+        onOpenWindow();
         break;
       case 'add_remote':
-        _showWindow();
+        onAddRemote();
+        break;
+      case 'unmount_all':
+        for (final r in session.remotes.where((r) => r.isMounted)) {
+          session.unmount(r);
+        }
         break;
       case 'quit':
-        _quit();
+        onQuit();
         break;
       default:
-        if (menuItem.key?.startsWith('remote_') == true) {
-          _showWindow();
+        if (key.startsWith('remote_')) {
+          final id = key.substring('remote_'.length);
+          final r = session.remotes.where((r) => r.id == id).firstOrNull;
+          if (r != null) _toggle(r);
         }
     }
   }
 
-  Future<void> _showWindow() async {
-    await windowManager.show();
-    await windowManager.focus();
+  void _toggle(RemoteConfig r) {
+    session.toggleMount(r, onPasswordRequested: onPasswordRequested);
   }
 
-  Future<void> _quit() async {
-    final session = rootContext.read<SessionManager>();
-    await session.disposeAll();
-    await windowManager.destroy();
-  }
-
-  Future<void> refresh() async {
-    await _rebuildMenu();
-  }
+  Future<void> refresh() => _rebuildMenu();
 
   void dispose() {
     trayManager.removeListener(this);

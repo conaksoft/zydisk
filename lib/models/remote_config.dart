@@ -52,6 +52,8 @@ class RemoteConfig {
   RemoteType type;
   AuthMethod authMethod;
   String? keyFilePath;
+  /// Uygulama açılışında otomatik bağlansın mı?
+  bool autoMount;
   // password is stored in keychain — not here
   bool isMounted;
   String? mountPoint;
@@ -66,9 +68,22 @@ class RemoteConfig {
     this.type = RemoteType.sftp,
     this.authMethod = AuthMethod.password,
     this.keyFilePath,
+    this.autoMount = false,
     this.isMounted = false,
     this.mountPoint,
   });
+
+  /// rclone'a verilen dahili uzak ad (kullanıcının gördüğü addan bağımsız, yeniden adlandırmaya dayanıklı).
+  String get rcloneName => 'zd${id.replaceAll(RegExp(r'[^A-Za-z0-9]'), '')}';
+
+  String get endpointLabel {
+    switch (type) {
+      case RemoteType.s3:
+        return '$host${path == '/' ? '' : path}';
+      default:
+        return '$user@$host:$port${path == '/' ? '' : path}';
+    }
+  }
 
   factory RemoteConfig.fromJson(Map<String, dynamic> json) {
     return RemoteConfig(
@@ -87,6 +102,7 @@ class RemoteConfig {
         orElse: () => AuthMethod.password,
       ),
       keyFilePath: json['keyFilePath'] as String?,
+      autoMount: json['autoMount'] as bool? ?? false,
       isMounted: false,
     );
   }
@@ -101,6 +117,7 @@ class RemoteConfig {
         'type': type.name,
         'authMethod': authMethod.name,
         'keyFilePath': keyFilePath,
+        'autoMount': autoMount,
       };
 
   RemoteConfig copyWith({
@@ -112,6 +129,7 @@ class RemoteConfig {
     RemoteType? type,
     AuthMethod? authMethod,
     String? keyFilePath,
+    bool? autoMount,
     bool? isMounted,
     String? mountPoint,
   }) {
@@ -125,6 +143,7 @@ class RemoteConfig {
       type: type ?? this.type,
       authMethod: authMethod ?? this.authMethod,
       keyFilePath: keyFilePath ?? this.keyFilePath,
+      autoMount: autoMount ?? this.autoMount,
       isMounted: isMounted ?? this.isMounted,
       mountPoint: mountPoint ?? this.mountPoint,
     );

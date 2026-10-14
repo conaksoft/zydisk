@@ -387,7 +387,7 @@
 			);
 			mainGroup = 33CC10E42044A3C60003C045;
 			packageReferences = (
-				781AD8BC2B33823900A9FFBB /* XCLocalSwiftPackageReference "Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage" */,
+				781AD8BC2B33823900A9FFBB /* XCLocalSwiftPackageReference "FlutterGeneratedPluginSwiftPackage" */,
 			);
 			productRefGroup = 33CC10EE2044A3C60003C045 /* Products */;
 			projectDirPath = "";
@@ -876,6 +876,7 @@
 				DEVELOPMENT_TEAM = LMY9XNPRWD;
 				ENABLE_HARDENED_RUNTIME = YES;
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				OTHER_LDFLAGS = "-Wl,-dead_strip_dylibs";
 				PRODUCT_BUNDLE_IDENTIFIER = com.conaksoft.zydisk.daemon;
 				PRODUCT_NAME = ZyDiskDaemon;
 				SDKROOT = macosx;
@@ -890,6 +891,7 @@
 				DEVELOPMENT_TEAM = LMY9XNPRWD;
 				ENABLE_HARDENED_RUNTIME = YES;
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				OTHER_LDFLAGS = "-Wl,-dead_strip_dylibs";
 				PRODUCT_BUNDLE_IDENTIFIER = com.conaksoft.zydisk.daemon;
 				PRODUCT_NAME = ZyDiskDaemon;
 				SDKROOT = macosx;
@@ -904,6 +906,7 @@
 				DEVELOPMENT_TEAM = LMY9XNPRWD;
 				ENABLE_HARDENED_RUNTIME = YES;
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				OTHER_LDFLAGS = "-Wl,-dead_strip_dylibs";
 				PRODUCT_BUNDLE_IDENTIFIER = com.conaksoft.zydisk.daemon;
 				PRODUCT_NAME = ZyDiskDaemon;
 				SDKROOT = macosx;
@@ -967,7 +970,7 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		781AD8BC2B33823900A9FFBB /* XCLocalSwiftPackageReference "Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage" */ = {
+		781AD8BC2B33823900A9FFBB /* XCLocalSwiftPackageReference "FlutterGeneratedPluginSwiftPackage" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage;
 		};
