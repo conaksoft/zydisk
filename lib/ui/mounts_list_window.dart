@@ -1,769 +1,502 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../models/remote_config.dart';
-import '../services/session_manager.dart';
 import '../services/mounter.dart';
+import '../services/session_manager.dart';
 import '../theme/app_theme.dart';
 import 'add_remote_window.dart';
-import 'package:file_selector/file_selector.dart';
+import 'settings_window.dart';
+import 'widgets.dart';
 
-class MountsListWindow extends StatefulWidget {
+void openAddRemote(BuildContext context, {RemoteConfig? existing}) {
+  Navigator.of(context).push(
+    PageRouteBuilder(
+      transitionDuration: const Duration(milliseconds: 180),
+      pageBuilder: (_, _, _) => AddRemoteWindow(existing: existing),
+      transitionsBuilder: (_, anim, _, child) => FadeTransition(opacity: anim, child: child),
+    ),
+  );
+}
+
+void openSettings(BuildContext context) {
+  Navigator.of(context).push(
+    PageRouteBuilder(
+      transitionDuration: const Duration(milliseconds: 180),
+      pageBuilder: (_, _, _) => const SettingsWindow(),
+      transitionsBuilder: (_, anim, _, child) => FadeTransition(opacity: anim, child: child),
+    ),
+  );
+}
+
+class MountsListWindow extends StatelessWidget {
   const MountsListWindow({super.key});
 
   @override
-  State<MountsListWindow> createState() => _MountsListWindowState();
-}
-
-class _MountsListWindowState extends State<MountsListWindow> {
-  @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppTheme.bg,
-      body: Column(
-        children: [
-          _buildHeader(context),
-          Expanded(
-            child: Consumer<SessionManager>(
-              builder: (ctx, session, _) {
-                if (session.remotes.isEmpty) {
-                  return _buildEmptyState(context);
-                }
-                return ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: session.remotes.length,
-                  itemBuilder: (ctx, i) {
-                    return _RemoteCard(config: session.remotes[i]);
-                  },
-                );
-              },
-            ),
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.keyN, meta: true): () => openAddRemote(context),
+        const SingleActivator(LogicalKeyboardKey.comma, meta: true): () => openSettings(context),
+      },
+      child: Focus(
+        autofocus: true,
+        child: Scaffold(
+          backgroundColor: AppTheme.bg,
+          body: Consumer<SessionManager>(
+            builder: (ctx, session, _) {
+              return Column(
+                children: [
+                  _Header(session: session),
+                  Expanded(
+                    child: !session.loaded
+                        ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
+                        : session.remotes.isEmpty
+                            ? const _EmptyState()
+                            : ListView.separated(
+                                padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+                                itemCount: session.remotes.length,
+                                separatorBuilder: (_, _) => const SizedBox(height: 10),
+                                itemBuilder: (ctx, i) => _RemoteCard(
+                                  key: ValueKey(session.remotes[i].id),
+                                  config: session.remotes[i],
+                                ),
+                              ),
+                  ),
+                ],
+              );
+            },
           ),
-        ],
+        ),
       ),
     );
   }
+}
 
-  Widget _buildHeader(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-      decoration: const BoxDecoration(
-        color: AppTheme.surface,
-        border: Border(bottom: BorderSide(color: AppTheme.border)),
-      ),
+class _Header extends StatelessWidget {
+  final SessionManager session;
+  const _Header({required this.session});
+
+  @override
+  Widget build(BuildContext context) {
+    final total = session.remotes.length;
+    final mounted = session.mountedCount;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 18, 16, 14),
       child: Row(
         children: [
-          // Logo
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: AppTheme.border, width: 1),
-            ),
-            child: const Icon(
-              Icons.storage_rounded,
-              color: Colors.black,
-              size: 16,
-            ),
-          ),
-          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Text('Sürücüler', style: AppTheme.text(20, weight: FontWeight.w700)),
+                const SizedBox(height: 2),
                 Text(
-                  'ZyDisk',
-                  style: GoogleFonts.inter(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: AppTheme.textPrimary,
-                  ),
-                ),
-                Text(
-                  'rclone + Native NFS',
-                  style: GoogleFonts.inter(
-                    fontSize: 11,
-                    color: AppTheme.textMuted,
-                  ),
+                  total == 0 ? 'Henüz bağlantı yok' : '$total bağlantı · $mounted bağlı',
+                  style: AppTheme.text(12, color: AppTheme.textMuted),
                 ),
               ],
             ),
           ),
-          // Import button
-          Tooltip(
-            message: 'Import Remotes',
-            child: IconButton(
-              icon: const Icon(Icons.file_download_outlined, size: 18),
-              color: AppTheme.textPrimary,
-              onPressed: () => _importRemotes(context),
-            ),
+          GhostIconButton(
+            icon: Icons.settings_rounded,
+            tooltip: 'Ayarlar (⌘,)',
+            onPressed: () => openSettings(context),
           ),
-          const SizedBox(width: 4),
-          // Export button
-          Tooltip(
-            message: 'Export Remotes',
-            child: IconButton(
-              icon: const Icon(Icons.file_upload_outlined, size: 18),
-              color: AppTheme.textPrimary,
-              onPressed: () => _exportRemotes(context),
-            ),
-          ),
-          const SizedBox(width: 10),
-          // Add Remote button
-          Tooltip(
-            message: 'Add Remote (⌘N)',
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(8),
-                onTap: () => _openAddRemote(context),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.black,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: AppTheme.textPrimary, width: 1),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.add_rounded,
-                        color: Colors.white,
-                        size: 16,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        'Add Remote',
-                        style: GoogleFonts.inter(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
+          const SizedBox(width: 8),
+          ElevatedButton.icon(
+            onPressed: () => openAddRemote(context),
+            icon: const Icon(Icons.add_rounded, size: 16),
+            label: const Text('Yeni Bağlantı'),
           ),
         ],
       ),
     );
   }
+}
 
-  Widget _buildEmptyState(BuildContext context) {
+class _EmptyState extends StatelessWidget {
+  const _EmptyState();
+
+  @override
+  Widget build(BuildContext context) {
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            width: 72,
-            height: 72,
+            width: 64,
+            height: 64,
             decoration: BoxDecoration(
-              color: AppTheme.surface,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: AppTheme.border),
+              color: AppTheme.accent.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(18),
             ),
-            child: const Icon(
-              Icons.cloud_off_rounded,
-              size: 36,
-              color: AppTheme.textMuted,
-            ),
+            child: const Icon(Icons.dns_rounded, size: 30, color: AppTheme.accent),
           ),
-          const SizedBox(height: 16),
-          Text(
-            'No remotes yet',
-            style: GoogleFonts.inter(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              color: AppTheme.textPrimary,
-            ),
-          ),
+          const SizedBox(height: 18),
+          Text('İlk sürücünü ekle', style: AppTheme.text(16, weight: FontWeight.w600)),
           const SizedBox(height: 6),
           Text(
-            'Add an SFTP, FTP, or S3 connection\nto mount it as a local drive.',
+            'SFTP, FTP/FTPS veya S3 uyumlu bir depolamayı\nFinder\'da yerel bir disk gibi kullan.',
             textAlign: TextAlign.center,
-            style: GoogleFonts.inter(
-              fontSize: 13,
-              color: AppTheme.textSecondary,
-              height: 1.5,
-            ),
+            style: AppTheme.text(13, color: AppTheme.textSecondary, height: 1.5),
           ),
           const SizedBox(height: 20),
           ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.white,
-              foregroundColor: Colors.black,
-            ),
-            onPressed: () => _openAddRemote(context),
+            onPressed: () => openAddRemote(context),
             icon: const Icon(Icons.add_rounded, size: 16),
-            label: const Text('Add Remote'),
+            label: const Text('Yeni Bağlantı'),
           ),
         ],
       ),
     );
-  }
-
-  void _openAddRemote(BuildContext context) {
-    Navigator.of(context).push(
-      PageRouteBuilder(
-        pageBuilder: (context, animation, secondaryAnimation) {
-          return ChangeNotifierProvider.value(
-            value: context.read<SessionManager>(),
-            child: const AddRemoteWindow(),
-          );
-        },
-        transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          return FadeTransition(
-            opacity: animation,
-            child: child,
-          );
-        },
-      ),
-    );
-  }
-
-  Future<void> _importRemotes(BuildContext context) async {
-    const typeGroup = XTypeGroup(
-      label: 'JSONs',
-      extensions: <String>['json'],
-    );
-    final file = await openFile(acceptedTypeGroups: <XTypeGroup>[typeGroup]);
-    if (file != null && context.mounted) {
-      final session = context.read<SessionManager>();
-      await session.importFromFile(file.path);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Remotes imported successfully')),
-      );
-    }
-  }
-
-  Future<void> _exportRemotes(BuildContext context) async {
-    final location = await getSaveLocation(suggestedName: 'remotes.json');
-    if (location != null && context.mounted) {
-      final session = context.read<SessionManager>();
-      await session.exportToFile(location.path);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Remotes exported to ${location.path}')),
-      );
-    }
   }
 }
 
 class _RemoteCard extends StatefulWidget {
   final RemoteConfig config;
-
-  const _RemoteCard({required this.config});
+  const _RemoteCard({super.key, required this.config});
 
   @override
   State<_RemoteCard> createState() => _RemoteCardState();
 }
 
-class _RemoteCardState extends State<_RemoteCard>
-    with SingleTickerProviderStateMixin {
+class _RemoteCardState extends State<_RemoteCard> {
   bool _hovered = false;
-  late AnimationController _pulseCtrl;
-  late Animation<double> _pulseAnim;
-
-  @override
-  void initState() {
-    super.initState();
-    _pulseCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 2),
-    )..repeat(reverse: true);
-    _pulseAnim = Tween(
-      begin: 0.4,
-      end: 1.0,
-    ).animate(CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut));
-  }
-
-  @override
-  void dispose() {
-    _pulseCtrl.dispose();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
-    final session = context.read<SessionManager>();
+    final session = context.watch<SessionManager>();
     final config = widget.config;
-    final isLoading = session.isLoading(config.id);
+    final busy = session.busyLabel(config.id);
     final error = session.getError(config.id);
+    final notice = session.getNotice(config.id);
+    final stats = session.statsFor(config.id);
+    final typeColor = AppTheme.typeColor(config.type);
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        margin: const EdgeInsets.only(bottom: 10),
+        duration: const Duration(milliseconds: 160),
         decoration: BoxDecoration(
           color: _hovered ? AppTheme.surfaceElevated : AppTheme.surface,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: config.isMounted
-                ? AppTheme.mounted.withOpacity(0.4)
-                : AppTheme.border,
+            color: config.isMounted ? AppTheme.success.withValues(alpha: 0.35) : AppTheme.border,
           ),
-          boxShadow: _hovered
-              ? [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.2),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
-                  ),
-                ]
-              : null,
         ),
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Column(
-            children: [
-              Row(
-                children: [
-                  // Type icon + status indicator
-                  Stack(
-                    children: [
-                      Container(
-                        width: 44,
-                        height: 44,
-                        decoration: BoxDecoration(
-                          color: _typeColor(config.type).withOpacity(0.15),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        alignment: Alignment.center,
-                        child: Text(
-                          config.type.icon,
-                          style: const TextStyle(fontSize: 20),
-                        ),
-                      ),
-                      // Mount status dot
-                      Positioned(
-                        right: 0,
-                        bottom: 0,
-                        child: AnimatedBuilder(
-                          animation: _pulseAnim,
-                          builder: (_, __) => Container(
-                            width: 12,
-                            height: 12,
-                            decoration: BoxDecoration(
-                              color: config.isMounted
-                                  ? AppTheme.mounted.withOpacity(
-                                      config.isMounted ? _pulseAnim.value : 1.0,
-                                    )
-                                  : AppTheme.unmounted,
-                              shape: BoxShape.circle,
-                              border: Border.all(color: AppTheme.bg, width: 2),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(width: 12),
-                  // Info
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          config.name,
-                          style: GoogleFonts.inter(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: AppTheme.textPrimary,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          '${config.type.label} • ${config.user}@${config.host}:${config.port}${config.path}',
-                          style: GoogleFonts.inter(
-                            fontSize: 12,
-                            color: AppTheme.textSecondary,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        if (config.isMounted) ...[
-                          const SizedBox(height: 2),
-                          Text(
-                            '📂 /Volumes/${config.name}',
-                            style: GoogleFonts.inter(
-                              fontSize: 11,
-                              color: AppTheme.mounted,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                  // Mount toggle
-                  const SizedBox(width: 8),
-                  _buildMountToggle(context, config, session, isLoading),
-                ],
-              ),
-              if (error != null) ...[
-                const SizedBox(height: 8),
+        padding: const EdgeInsets.fromLTRB(14, 14, 10, 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 6,
-                  ),
+                  width: 42,
+                  height: 42,
                   decoration: BoxDecoration(
-                    color: AppTheme.danger.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: AppTheme.danger.withOpacity(0.3)),
+                    color: typeColor.withValues(alpha: 0.13),
+                    borderRadius: BorderRadius.circular(10),
                   ),
-                  child: Row(
+                  child: Icon(AppTheme.typeIcon(config.type), size: 20, color: typeColor),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Icon(
-                        Icons.error_outline,
-                        size: 14,
-                        color: AppTheme.danger,
-                      ),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          error,
-                          style: GoogleFonts.inter(
-                            fontSize: 11,
-                            color: AppTheme.danger,
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              config.name,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTheme.text(14, weight: FontWeight.w600),
+                            ),
                           ),
-                        ),
+                          const SizedBox(width: 8),
+                          _StatusPill(config: config, busy: busy, stats: stats),
+                          if (config.autoMount) ...[
+                            const SizedBox(width: 6),
+                            const Tooltip(
+                              message: 'Açılışta otomatik bağlanır',
+                              child: Icon(Icons.bolt_rounded, size: 14, color: AppTheme.textMuted),
+                            ),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        '${config.type.label} · ${config.endpointLabel}',
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTheme.text(12, color: AppTheme.textSecondary),
                       ),
                     ],
                   ),
                 ),
+                const SizedBox(width: 8),
+                _MountButton(config: config, busy: busy != null),
+                _MoreMenu(config: config, disabled: busy != null),
               ],
-              if (config.isMounted) ...[
-                const SizedBox(height: 10),
-                _buildMountedActions(config),
-              ],
+            ),
+            if (config.isMounted) ...[
+              const SizedBox(height: 12),
+              Padding(
+                padding: const EdgeInsets.only(left: 54),
+                child: Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    ActionChipButton(
+                      icon: Icons.folder_open_rounded,
+                      label: 'Finder',
+                      onTap: () => Mounter.openInFinder(config),
+                    ),
+                    ActionChipButton(
+                      icon: Icons.code_rounded,
+                      label: 'VS Code',
+                      onTap: () => Mounter.openInVSCode(config),
+                    ),
+                    ActionChipButton(
+                      icon: Icons.terminal_rounded,
+                      label: 'Terminal',
+                      onTap: () => Mounter.openInTerminal(config),
+                    ),
+                    ActionChipButton(
+                      icon: Icons.refresh_rounded,
+                      label: 'Yenile',
+                      onTap: () async {
+                        await session.refresh(config);
+                        if (context.mounted) showToast(context, 'Klasör listesi yenilendi');
+                      },
+                    ),
+                    const SizedBox(width: 4),
+                    _CopyablePath(path: Mounter.getMountPoint(config)),
+                  ],
+                ),
+              ),
             ],
-          ),
+            if (notice != null && error == null) ...[
+              const SizedBox(height: 10),
+              _Banner(message: notice, color: AppTheme.accent, icon: Icons.cloud_upload_rounded),
+            ],
+            if (error != null) ...[
+              const SizedBox(height: 10),
+              _Banner(message: error, color: AppTheme.danger, icon: Icons.error_outline_rounded),
+            ],
+          ],
         ),
       ),
     );
   }
+}
 
-  Widget _buildMountToggle(
-    BuildContext context,
-    RemoteConfig config,
-    SessionManager session,
-    bool isLoading,
-  ) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // Edit
-        if (!config.isMounted)
-          Tooltip(
-            message: 'Edit',
-            child: IconButton(
-              icon: const Icon(Icons.edit_rounded, size: 16),
-              color: AppTheme.textMuted,
-              onPressed: () => _openEdit(context),
-              style: IconButton.styleFrom(
-                backgroundColor: AppTheme.surfaceElevated,
-                padding: const EdgeInsets.all(8),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(6),
-                ),
-              ),
-            ),
-          ),
-        const SizedBox(width: 6),
-        // Delete
-        if (!config.isMounted)
-          Tooltip(
-            message: 'Delete',
-            child: IconButton(
-              icon: const Icon(Icons.delete_rounded, size: 16),
-              color: AppTheme.danger,
-              onPressed: () => _confirmDelete(context, config, session),
-              style: IconButton.styleFrom(
-                backgroundColor: AppTheme.danger.withOpacity(0.1),
-                padding: const EdgeInsets.all(8),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(6),
-                ),
-              ),
-            ),
-          ),
-        const SizedBox(width: 6),
-        // Connect/Disconnect
-        AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          child: isLoading
-              ? Container(
-                  width: 80,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: AppTheme.surface,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: AppTheme.border),
-                  ),
-                  alignment: Alignment.center,
-                  child: const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: AppTheme.accent,
-                    ),
-                  ),
-                )
-              : ElevatedButton(
-                  onPressed: () => session.toggleMount(
-                    config,
-                    onPasswordRequested: () => _promptForPassword(context, config),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: config.isMounted
-                        ? AppTheme.danger.withOpacity(0.15)
-                        : AppTheme.accent,
-                    foregroundColor: config.isMounted
-                        ? AppTheme.danger
-                        : Colors.black,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 8,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      side: BorderSide(
-                        color: config.isMounted
-                            ? AppTheme.danger.withOpacity(0.4)
-                            : Colors.transparent,
-                      ),
-                    ),
-                    elevation: 0,
-                    minimumSize: const Size(80, 36),
-                  ),
-                  child: Text(
-                    config.isMounted ? 'Eject' : 'Mount',
-                    style: GoogleFonts.inter(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-        ),
-      ],
-    );
-  }
+class _StatusPill extends StatelessWidget {
+  final RemoteConfig config;
+  final String? busy;
+  final TransferStats stats;
 
-  Widget _buildMountedActions(RemoteConfig config) {
-    return Row(
-      children: [
-        _actionButton(
-          icon: Icons.folder_open_rounded,
-          label: 'Finder',
-          color: AppTheme.warning,
-          onTap: () => Mounter.openInFinder(config),
-        ),
-        const SizedBox(width: 8),
-        _actionButton(
-          icon: Icons.code_rounded,
-          label: 'VSCode',
-          color: AppTheme.textPrimary,
-          onTap: () => Mounter.openInVSCode(config),
-        ),
-        const SizedBox(width: 8),
-        _actionButton(
-          icon: Icons.terminal_rounded,
-          label: 'Terminal',
-          color: AppTheme.textPrimary,
-          onTap: () => _openTerminal(config),
-        ),
-      ],
-    );
-  }
+  const _StatusPill({required this.config, required this.busy, required this.stats});
 
-  Widget _actionButton({
-    required IconData icon,
-    required String label,
-    required Color color,
-    required VoidCallback onTap,
-  }) {
-    return Material(
-      color: color.withOpacity(0.1),
-      borderRadius: BorderRadius.circular(8),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 14, color: color),
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: GoogleFonts.inter(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                  color: color,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  @override
+  Widget build(BuildContext context) {
+    late final Color color;
+    late final String label;
+    Widget? leading;
 
-  Color _typeColor(RemoteType type) {
-    switch (type) {
-      case RemoteType.sftp:
-        return AppTheme.textPrimary;
-      case RemoteType.ftp:
-        return AppTheme.warning;
-      case RemoteType.ftps:
-        return AppTheme.mounted;
-      case RemoteType.s3:
-        return AppTheme.textPrimary;
+    if (busy != null) {
+      color = AppTheme.accent;
+      label = busy!;
+      leading = const SizedBox(width: 9, height: 9, child: CircularProgressIndicator(strokeWidth: 1.5, color: AppTheme.accent));
+    } else if (!stats.idle) {
+      color = AppTheme.accent;
+      final speed = stats.speed > 0 ? ' · ${formatSpeed(stats.speed)}' : '';
+      label = '${stats.pendingUploads} yükleniyor$speed';
+      leading = const Icon(Icons.arrow_upward_rounded, size: 11, color: AppTheme.accent);
+    } else if (config.isMounted) {
+      color = AppTheme.success;
+      label = 'Bağlı';
+    } else {
+      color = AppTheme.textMuted;
+      label = 'Bağlı değil';
     }
-  }
 
-  void _openEdit(BuildContext context) {
-    Navigator.of(context).push(
-      PageRouteBuilder(
-        pageBuilder: (context, animation, secondaryAnimation) {
-          return ChangeNotifierProvider.value(
-            value: context.read<SessionManager>(),
-            child: AddRemoteWindow(existing: widget.config),
-          );
-        },
-        transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          return FadeTransition(
-            opacity: animation,
-            child: child,
-          );
-        },
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
       ),
-    );
-  }
-
-  void _confirmDelete(
-    BuildContext context,
-    RemoteConfig config,
-    SessionManager session,
-  ) {
-    showDialog(
-      context: context,
-      builder: (dialogCtx) => AlertDialog(
-        backgroundColor: AppTheme.surfaceElevated,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        title: Text(
-          'Delete Remote',
-          style: GoogleFonts.inter(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-            color: AppTheme.textPrimary,
-          ),
-        ),
-        content: Text(
-          'Delete "${config.name}"? This will also remove its saved password.',
-          style: GoogleFonts.inter(fontSize: 13, color: AppTheme.textSecondary),
-        ),
-        actions: [
-          OutlinedButton(
-            onPressed: () => Navigator.pop(dialogCtx),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppTheme.danger,
-              foregroundColor: Colors.white,
-            ),
-            onPressed: () {
-              Navigator.pop(dialogCtx);
-              session.deleteRemote(config);
-            },
-            child: const Text('Delete'),
-          ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          leading ??
+              Container(width: 6, height: 6, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+          const SizedBox(width: 5),
+          Text(label, style: AppTheme.text(11, weight: FontWeight.w500, color: color)),
         ],
       ),
     );
   }
+}
 
-  Future<void> _openTerminal(RemoteConfig config) async {
-    final mountPoint = '/Volumes/${config.name}';
-    await Process.run('open', ['-a', 'Terminal', mountPoint]);
+class _MountButton extends StatelessWidget {
+  final RemoteConfig config;
+  final bool busy;
+  const _MountButton({required this.config, required this.busy});
+
+  @override
+  Widget build(BuildContext context) {
+    final session = context.read<SessionManager>();
+    final mounted = config.isMounted;
+    return SizedBox(
+      height: 34,
+      child: mounted
+          ? OutlinedButton.icon(
+              onPressed: busy ? null : () => session.toggleMount(config),
+              icon: const Icon(Icons.eject_rounded, size: 16),
+              label: const Text('Ayır'),
+              style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 12)),
+            )
+          : ElevatedButton.icon(
+              onPressed: busy
+                  ? null
+                  : () => session.toggleMount(
+                        config,
+                        onPasswordRequested: (c, {reason}) => promptForPassword(context, c, reason: reason),
+                      ),
+              icon: const Icon(Icons.power_settings_new_rounded, size: 16),
+              label: const Text('Bağla'),
+              style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 14)),
+            ),
+    );
+  }
+}
+
+class _MoreMenu extends StatelessWidget {
+  final RemoteConfig config;
+  final bool disabled;
+  const _MoreMenu({required this.config, required this.disabled});
+
+  @override
+  Widget build(BuildContext context) {
+    final session = context.read<SessionManager>();
+    return PopupMenuButton<String>(
+      enabled: !disabled,
+      tooltip: 'Diğer',
+      icon: const Icon(Icons.more_vert_rounded, size: 18, color: AppTheme.textSecondary),
+      offset: const Offset(0, 36),
+      onSelected: (v) async {
+        switch (v) {
+          case 'edit':
+            openAddRemote(context, existing: config);
+            break;
+          case 'auto':
+            await session.setAutoMount(config, !config.autoMount);
+            break;
+          case 'clean':
+            final ok = await confirmDialog(
+              context,
+              title: 'Sunucuyu temizle',
+              message: '"${config.name}" üzerindeki tüm ._* (AppleDouble), .DS_Store ve .apdisk dosyaları '
+                  'kalıcı olarak silinecek. Büyük sunucularda bu işlem biraz sürebilir.',
+              confirmLabel: 'Temizle',
+              destructive: true,
+            );
+            if (!ok || !context.mounted) return;
+            showToast(context, 'Sunucu taranıyor…');
+            final msg = await session.cleanRemoteJunk(config);
+            if (context.mounted) showToast(context, msg);
+            break;
+          case 'delete':
+            final ok = await confirmDialog(
+              context,
+              title: 'Bağlantıyı sil',
+              message: '"${config.name}" silinsin mi? Kayıtlı parolası da anahtar zincirinden kaldırılır. '
+                  'Sunucudaki dosyalarınız etkilenmez.',
+              confirmLabel: 'Sil',
+              destructive: true,
+            );
+            if (ok) await session.deleteRemote(config);
+            break;
+        }
+      },
+      itemBuilder: (_) => [
+        _item('edit', Icons.edit_rounded, 'Düzenle'),
+        CheckedPopupMenuItem(
+          value: 'auto',
+          checked: config.autoMount,
+          child: Text('Açılışta otomatik bağlan', style: AppTheme.text(13)),
+        ),
+        _item('clean', Icons.cleaning_services_rounded, 'Sunucudaki ._ dosyalarını temizle'),
+        const PopupMenuDivider(),
+        _item('delete', Icons.delete_outline_rounded, 'Sil', color: AppTheme.danger),
+      ],
+    );
   }
 
-  Future<String?> _promptForPassword(BuildContext context, RemoteConfig config) async {
-    final tc = TextEditingController();
-    return showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppTheme.surfaceElevated,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        title: Text(
-          'Password Required',
-          style: GoogleFonts.inter(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-            color: AppTheme.textPrimary,
-          ),
+  PopupMenuItem<String> _item(String value, IconData icon, String label, {Color? color}) {
+    return PopupMenuItem(
+      value: value,
+      height: 38,
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: color ?? AppTheme.textSecondary),
+          const SizedBox(width: 10),
+          Text(label, style: AppTheme.text(13, color: color ?? AppTheme.textPrimary)),
+        ],
+      ),
+    );
+  }
+}
+
+class _CopyablePath extends StatelessWidget {
+  final String path;
+  const _CopyablePath({required this.path});
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: 'Yolu kopyala',
+      child: InkWell(
+        borderRadius: BorderRadius.circular(6),
+        onTap: () {
+          Clipboard.setData(ClipboardData(text: path));
+          showToast(context, 'Kopyalandı: $path');
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+          child: Text(path, style: AppTheme.text(11, color: AppTheme.textMuted)),
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Please enter the password for "${config.name}".',
-              style: GoogleFonts.inter(fontSize: 13, color: AppTheme.textSecondary),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: tc,
-              obscureText: true,
-              autofocus: true,
-              style: GoogleFonts.inter(fontSize: 14, color: AppTheme.textPrimary),
-              decoration: InputDecoration(
-                hintText: 'Password',
-                hintStyle: const TextStyle(color: AppTheme.textMuted),
-                filled: true,
-                fillColor: AppTheme.surface,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: AppTheme.border),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: AppTheme.border),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: AppTheme.accent),
-                ),
-              ),
-              onSubmitted: (val) => Navigator.pop(ctx, val),
-            ),
-          ],
-        ),
-        actions: [
-          OutlinedButton(
-            onPressed: () => Navigator.pop(ctx, null),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppTheme.accent,
-              foregroundColor: Colors.black,
-            ),
-            onPressed: () => Navigator.pop(ctx, tc.text),
-            child: const Text('Save & Mount'),
-          ),
+      ),
+    );
+  }
+}
+
+class _Banner extends StatelessWidget {
+  final String message;
+  final Color color;
+  final IconData icon;
+  const _Banner({required this.message, required this.color, required this.icon});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 14, color: color),
+          const SizedBox(width: 8),
+          Expanded(child: SelectableText(message, style: AppTheme.text(12, color: color, height: 1.4))),
         ],
       ),
     );

@@ -1,124 +1,131 @@
+import 'dart:convert';
 import 'dart:io';
 import '../models/remote_config.dart';
-import 'keychain_service.dart';
 import 'mounter.dart';
 
+/// rclone uzak tanımını üretir.
+///
+/// Yapılandırma artık rclone.conf dosyasına yazılmaz: tüm ayarlar (gizlenmiş parola dahil) yalnızca
+/// rclone sürecinin ortam değişkenlerine verilir. Böylece diskte parola kalmaz ve uzak yeniden
+/// adlandırıldığında eski bölümler birikmez.
 class ConfigBuilder {
-  /// Generates and writes the rclone config file for a given remote.
-  static Future<void> writeConfig(RemoteConfig config) async {
-    final configFile = await _getRcloneConfigFile();
-    final existing = await configFile.readAsString().catchError((_) => '');
-
-    // Remove existing section for this remote
-    final cleaned = _removeSection(existing, config.name);
-
-    // Build new section
-    final password = config.authMethod == AuthMethod.password
-        ? await KeychainService.getPassword(config.id)
-        : null;
-
-    final section = await _buildSection(config, password);
-    final newContent = '$cleaned\n$section';
-
-    await configFile.writeAsString(newContent);
-  }
-
-  static Future<void> removeConfig(RemoteConfig config) async {
-    final configFile = await _getRcloneConfigFile();
-    final existing = await configFile.readAsString().catchError((_) => '');
-    final cleaned = _removeSection(existing, config.name);
-    await configFile.writeAsString(cleaned);
-  }
-
-  static Future<String> _buildSection(RemoteConfig config, String? password) async {
-    final buffer = StringBuffer();
-    buffer.writeln('[${config.name}]');
+  static Future<Map<String, String>> buildEnvironment(RemoteConfig config, String? password) async {
+    final prefix = 'RCLONE_CONFIG_${config.rcloneName.toUpperCase()}_';
+    final opts = <String, String>{};
 
     switch (config.type) {
       case RemoteType.sftp:
-        buffer.writeln('type = sftp');
-        buffer.writeln('host = ${config.host}');
-        buffer.writeln('user = ${config.user}');
-        buffer.writeln('port = ${config.port}');
-        if (config.authMethod == AuthMethod.keyFile && config.keyFilePath != null) {
-          buffer.writeln('key_file = ${config.keyFilePath}');
+        opts['type'] = 'sftp';
+        opts['host'] = config.host;
+        opts['user'] = config.user;
+        opts['port'] = '${config.port}';
+        // Sunucuda md5sum/sha1sum aramasını atla: bağlantı hızlanır, gereksiz komut çalışmaz.
+        opts['disable_hashcheck'] = 'true';
+        opts['shell_type'] = 'unix';
+        if (config.authMethod == AuthMethod.keyFile && (config.keyFilePath ?? '').isNotEmpty) {
+          opts['key_file'] = config.keyFilePath!;
         } else if (password != null) {
-          // rclone uses obscured passwords
-          final obscured = await _obscurePassword(password);
-          buffer.writeln('pass = $obscured');
+          opts['pass'] = await obscure(password);
         }
         break;
 
       case RemoteType.ftp:
-        buffer.writeln('type = ftp');
-        buffer.writeln('host = ${config.host}');
-        buffer.writeln('user = ${config.user}');
-        buffer.writeln('port = ${config.port}');
-        buffer.writeln('concurrency = 3');
-        if (password != null) {
-          final obscured = await _obscurePassword(password);
-          buffer.writeln('pass = $obscured');
-        }
-        break;
-
       case RemoteType.ftps:
-        buffer.writeln('type = ftp');
-        buffer.writeln('host = ${config.host}');
-        buffer.writeln('user = ${config.user}');
-        buffer.writeln('port = ${config.port}');
-        buffer.writeln('tls = true');
-        buffer.writeln('concurrency = 3');
+        opts['type'] = 'ftp';
+        opts['host'] = config.host;
+        opts['user'] = config.user;
+        opts['port'] = '${config.port}';
+        opts['concurrency'] = '4';
+        if (config.type == RemoteType.ftps) {
+          // 990 = implicit TLS, diğer portlar explicit (AUTH TLS).
+          if (config.port == 990) {
+            opts['tls'] = 'true';
+          } else {
+            opts['explicit_tls'] = 'true';
+          }
+        }
         if (password != null) {
-          final obscured = await _obscurePassword(password);
-          buffer.writeln('pass = $obscured');
+          opts['pass'] = await obscure(password);
         }
         break;
 
       case RemoteType.s3:
-        buffer.writeln('type = s3');
-        buffer.writeln('provider = Other');
-        buffer.writeln('endpoint = ${config.host}');
-        buffer.writeln('access_key_id = ${config.user}');
+        opts['type'] = 's3';
+        opts['provider'] = 'Other';
+        opts['endpoint'] = _s3Endpoint(config);
+        opts['access_key_id'] = config.user;
         if (password != null) {
-          buffer.writeln('secret_access_key = $password');
+          opts['secret_access_key'] = password;
         }
         break;
     }
 
-    return buffer.toString();
+    return opts.map((k, v) => MapEntry('$prefix${k.toUpperCase()}', v));
   }
 
-  static Future<String> _obscurePassword(String plaintext) async {
-    final result = await Process.run(Mounter.rcloneBin, ['obscure', plaintext]);
-    return (result.stdout as String).trim();
+  static String _s3Endpoint(RemoteConfig config) {
+    final host = config.host.trim();
+    if (host.startsWith('http://') || host.startsWith('https://')) return host;
+    if (config.port == 443 || config.port == 0) return host;
+    return 'https://$host:${config.port}';
   }
 
-  static String _removeSection(String content, String name) {
+  /// Parolayı komut satırı argümanında göstermeden (stdin üzerinden) gizler.
+  static Future<String> obscure(String plaintext) async {
+    final p = await Process.start(Mounter.rcloneBin, ['obscure', '-']);
+    p.stdin.write(plaintext);
+    await p.stdin.close();
+    final out = await p.stdout.transform(utf8.decoder).join();
+    await p.exitCode;
+    return out.trim();
+  }
+
+  /// Önceki sürümlerin ~/.config/rclone/rclone.conf içine yazdığı ve gizlenmiş parola içeren
+  /// bölümleri temizler. Yalnızca ad + host eşleşen (yani ZyDisk'in yazdığı) bölümler silinir.
+  static Future<void> cleanupLegacyConfig(List<RemoteConfig> remotes) async {
+    final home = Platform.environment['HOME'];
+    if (home == null) return;
+    final file = File('$home/.config/rclone/rclone.conf');
+    if (!await file.exists()) return;
+
+    final content = await file.readAsString();
     final lines = content.split('\n');
     final result = <String>[];
-    bool inSection = false;
+    var changed = false;
 
-    for (final line in lines) {
-      if (line.trim() == '[$name]') {
-        inSection = true;
+    var i = 0;
+    while (i < lines.length) {
+      final header = RegExp(r'^\s*\[(.+)\]\s*$').firstMatch(lines[i]);
+      if (header == null) {
+        result.add(lines[i]);
+        i++;
         continue;
       }
-      if (inSection && line.trim().startsWith('[')) {
-        inSection = false;
+      final name = header.group(1)!;
+      final section = <String>[lines[i]];
+      i++;
+      while (i < lines.length && !RegExp(r'^\s*\[').hasMatch(lines[i])) {
+        section.add(lines[i]);
+        i++;
       }
-      if (!inSection) {
-        result.add(line);
+      final hostLine = section.firstWhere((l) => l.trim().startsWith('host =') || l.trim().startsWith('endpoint ='),
+          orElse: () => '');
+      final host = hostLine.split('=').skip(1).join('=').trim();
+      final owned = remotes.any((r) => r.name == name && r.host == host);
+      if (owned) {
+        changed = true;
+      } else {
+        result.addAll(section);
       }
     }
-    return result.join('\n');
-  }
 
-  static Future<File> _getRcloneConfigFile() async {
-    final home = Platform.environment['HOME']!;
-    final dir = Directory('$home/.config/rclone');
-    if (!await dir.exists()) {
-      await dir.create(recursive: true);
+    if (changed) {
+      final backup = File('${file.path}.zydisk-backup');
+      if (!await backup.exists()) {
+        await file.copy(backup.path);
+        await Process.run('chmod', ['600', backup.path]);
+      }
+      await file.writeAsString(result.join('\n'));
     }
-    return File('$home/.config/rclone/rclone.conf');
   }
 }
