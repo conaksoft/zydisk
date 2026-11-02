@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="assets/icons/tray_icon.png" alt="ZyDisk Logo" width="120" height="120">
+  <img src="docs/logo.png" alt="ZyDisk Logo" width="128" height="128">
   <h1>ZyDisk</h1>
   <p><b>Enterprise-Grade Cloud Storage Mounter for macOS</b></p>
   <p><i>Developed with ❤️ by <a href="https://conaksoft.com">Conaksoft</a></i></p>
