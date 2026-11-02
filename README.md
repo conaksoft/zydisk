@@ -36,7 +36,7 @@ ZyDisk uses the proven [rclone](https://rclone.org) engine and macOS's built-in 
 
 ## Installation
 
-Pre-built `.dmg` files will be published in [Releases](https://github.com/conaksoft/zydisk/releases).
+ZyDisk is distributed as source code. Build it on your Mac as described below.
 
 ## Building from Source
 
@@ -73,6 +73,14 @@ The app is written in Flutter (UI) and Swift (privileged XPC helper, Keychain, T
 
 By installing or using ZyDisk you agree to these terms.
 
+## License
+
+ZyDisk is **source available** under the [PolyForm Noncommercial License 1.0.0](LICENSE).
+
+- **Free** for personal use, study, research, hobby projects and non-profit organizations.
+- **Commercial use requires a license.** This includes using ZyDisk at work or inside a company, selling it, or building a product or service on it. Write to [contact@conaksoft.com](mailto:contact@conaksoft.com) for a commercial license.
+- The ZyDisk name and logo are not covered by the license and may not be used for other products.
+
 ## Third-Party Software
 
 ZyDisk downloads and runs [rclone](https://github.com/rclone/rclone) (MIT License). It is built with [Flutter](https://flutter.dev) (BSD 3-Clause License) and open-source Dart packages, each under its own license. Their copyright notices belong to their respective authors.
@@ -83,7 +91,9 @@ ZyDisk downloads and runs [rclone](https://github.com/rclone/rclone) (MIT Licens
 
 **Sorumluluk reddi:** ZyDisk "olduğu gibi" sunulur ve hiçbir garanti verilmez. Yürürlükteki mevzuatın izin verdiği en geniş ölçüde Conaksoft, uygulamanın kullanımından veya kullanılamamasından doğan veri kaybı, veri bozulması, hizmet kesintisi, güvenlik olayları ve kâr kaybı dahil hiçbir doğrudan veya dolaylı zarardan sorumlu değildir. Önemli verilerinizin her zaman bağımsız yedeğini alın. Varsayılan olarak açık olan temizlik özelliği, macOS'un sunucuya yüklediği `._*`, `.DS_Store` ve `.apdisk` dosyalarını siler. Bağlandığınız sunucuların kullanım koşullarına uymak, erişim yetkisine sahip olmak ve servis sağlayıcıların ücretleri sizin sorumluluğunuzdadır. Uygulama, kişisel verileri Conaksoft'a göndermez; tüm bilgiler yalnızca kendi bilgisayarınızda işlenir. Uygulamayı kurarak veya kullanarak bu koşulları kabul etmiş sayılırsınız.
 
+**Lisans:** ZyDisk'in kaynak kodu [PolyForm Noncommercial 1.0.0](LICENSE) lisansıyla açıktır. Kişisel, eğitim, araştırma ve kâr amacı gütmeyen kullanım ücretsizdir. İş yerinde kullanım, satış veya ticari bir ürüne dahil etme gibi ticari kullanımlar için [contact@conaksoft.com](mailto:contact@conaksoft.com) adresinden lisans alınması gerekir.
+
 ---
 <div align="center">
-  <p>ZyDisk is a product of <a href="https://conaksoft.com">Conaksoft</a>.<br>Copyright © 2026 Conaksoft. All rights reserved.</p>
+  <p>ZyDisk is a product of <a href="https://conaksoft.com">Conaksoft</a>.<br>Copyright © 2026 Conak Soft LLC · <a href="LICENSE">PolyForm Noncommercial 1.0.0</a></p>
 </div>
