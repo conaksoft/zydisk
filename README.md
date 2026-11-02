@@ -36,14 +36,14 @@ ZyDisk uses the proven [rclone](https://rclone.org) engine and macOS's built-in 
 
 ## Installation
 
-Pre-built `.dmg` files will be published in [Releases](https://github.com/shibware/zydisk/releases).
+Pre-built `.dmg` files will be published in [Releases](https://github.com/conaksoft/zydisk/releases).
 
 ## Building from Source
 
 You need **Flutter** (3.41 or later) and **Xcode**.
 
 ```bash
-git clone https://github.com/shibware/zydisk.git
+git clone https://github.com/conaksoft/zydisk.git
 cd zydisk
 flutter pub get
 flutter build macos

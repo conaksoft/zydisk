@@ -283,7 +283,7 @@ class _StatusBarState extends State<_StatusBar> {
           const Spacer(),
           _link('conaksoft.com', 'https://conaksoft.com'),
           const SizedBox(width: 14),
-          _link('$_version · Güncellemeler', 'https://github.com/shibware/zydisk/releases'),
+          _link('$_version · Güncellemeler', 'https://github.com/conaksoft/zydisk/releases'),
         ],
       ),
     );
