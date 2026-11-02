@@ -36,7 +36,7 @@ Sitelerini doğrudan sunucuda düzenleyen web geliştiricileri, FTP üzerinden d
 
 **Sistem gereksinimleri:** macOS 13 Ventura veya üzeri · Apple Silicon ve Intel · Tek seferlik kurulum için yönetici hesabı
 
-**Bağlantılar:** GitHub: https://github.com/shibware/zydisk · İndir: https://github.com/shibware/zydisk/releases
+**Bağlantılar:** GitHub: https://github.com/conaksoft/zydisk · İndir: https://github.com/conaksoft/zydisk/releases
 
 **SEO anahtar kelimeleri:** mac sftp sürücü, mac ftp bağlama, s3 finder, macos sunucu disk olarak bağlama, macfuse alternatifi, rclone mac arayüzü
 
@@ -75,4 +75,4 @@ ZyDisk uses the proven rclone engine together with macOS's built-in NFS client, 
 
 ## Ürün sayfası için kısa sorumluluk reddi notu
 
-> ZyDisk "olduğu gibi" sunulur. Conaksoft, uygulamanın kullanımından doğabilecek veri kaybı veya diğer zararlardan sorumlu tutulamaz. Önemli verilerinizin her zaman yedeğini alın. Ayrıntılı koşullar: https://github.com/shibware/zydisk#disclaimer
+> ZyDisk "olduğu gibi" sunulur. Conaksoft, uygulamanın kullanımından doğabilecek veri kaybı veya diğer zararlardan sorumlu tutulamaz. Önemli verilerinizin her zaman yedeğini alın. Ayrıntılı koşullar: https://github.com/conaksoft/zydisk#disclaimer
