@@ -36,7 +36,17 @@ ZyDisk uses the proven [rclone](https://rclone.org) engine and macOS's built-in 
 
 ## Installation
 
-ZyDisk is distributed as source code. Build it on your Mac as described below.
+1. Download `ZyDisk-<version>.zip` from the [latest release](https://github.com/conaksoft/zydisk/releases/latest).
+2. Unzip it and move **ZyDisk** to your **Applications** folder.
+3. Open it. On first launch ZyDisk downloads rclone and asks once for your Mac password to install its background helper.
+
+The app is a universal build for Apple Silicon and Intel, signed with Conaksoft's Developer ID and notarized by Apple. To check the download, compare its SHA-256 with the `.sha256` file attached to the release:
+
+```bash
+shasum -a 256 ZyDisk-<version>.zip
+```
+
+Every feature is included. There are no paid tiers or locked features; see [License](#license) for when a commercial license is needed.
 
 ## Building from Source
 
@@ -50,6 +60,8 @@ flutter build macos
 ```
 
 The app is written in Flutter (UI) and Swift (privileged XPC helper, Keychain, Touch ID and system integration).
+
+`./release.sh` builds the signed, notarized release zip and its SHA-256 into `dist/` (needs a Developer ID certificate and a `notarytool` keychain profile).
 
 ## Security & Privacy
 
